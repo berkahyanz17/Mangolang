@@ -22,7 +22,7 @@ mycli/
 ## Build & run
 
 ```bash
-go build -o mycli .
+go build -o mycli.exe .
 ./mycli               # shows help
 ./mycli --version
 ./mycli greet --name Budi --loud

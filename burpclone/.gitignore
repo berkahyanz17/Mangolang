@@ -1,0 +1,21 @@
+# Root CA private key + cert - NEVER commit this. Anyone with root.key can
+# MITM traffic on any machine that trusts this CA.
+ca-store/
+
+# SQLite history db - contains full raw request/response bodies, which
+# may include credentials, tokens, cookies from intercepted traffic.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Go build artifacts
+*.exe
+*.test
+*.out
+/burpclone
+
+# Editor/OS cruft
+.vscode/
+.idea/
+.DS_Store

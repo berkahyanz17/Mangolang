@@ -25,7 +25,7 @@ todoapi/
 ## Cara menjalankan
 
 ```bash
-go build -o todoapi .
+go build -o todoapi.exe .
 ./todoapi          # Linux/Mac
 todoapi.exe        # Windows
 ```
