@@ -17,6 +17,8 @@ func main() {
 	sameDomain := flag.Bool("same-domain", true, "only follow links on the same domain as -url")
 	delayMs := flag.Int("delay-ms", 300, "delay between requests in milliseconds (be polite to servers)")
 	output := flag.String("output", "", "optional CSV file path to save results")
+	workers := flag.Int("workers", 4, "number of concurrent fetch workers")
+	respectRobots := flag.Bool("respect-robots", true, "check robots.txt before crawling each URL")
 	flag.Parse()
 
 	if *url == "" {
@@ -29,6 +31,8 @@ func main() {
 		MaxPages:       *maxPages,
 		SameDomainOnly: *sameDomain,
 		Delay:          time.Duration(*delayMs) * time.Millisecond,
+		Concurrency:    *workers,
+		RespectRobots:  *respectRobots,
 	}
 
 	var csvWriter *csv.Writer

@@ -8,7 +8,9 @@ Fiturnya:
 - Fetch halaman, extract `<title>` dan semua link (`<a href="...">`)
 - Crawl berantai (breadth-first) sampai kedalaman (`depth`) yang lo tentuin
 - Bisa dibatasi cuma follow link di domain yang sama
-- Delay antar-request (biar sopan, gak nge-DDoS server orang)
+- **Concurrent fetching** — beberapa halaman di-fetch sekaligus lewat worker pool
+- **Cek `robots.txt` otomatis** — halaman yang di-disallow bakal di-skip
+- Delay antar-request (global rate limit, tetep sopan walau workers banyak)
 - Simpen hasil ke CSV (opsional)
 
 ## Struktur
@@ -53,25 +55,54 @@ go build -o webcrawler.exe .
 | `-depth`        | `1`     | Berapa "lompatan" link yang di-follow dari halaman awal |
 | `-max-pages`    | `20`    | Batas aman total halaman yang di-fetch                |
 | `-same-domain`  | `true`  | Cuma follow link di domain yang sama                   |
-| `-delay-ms`     | `300`   | Jeda antar-request (ms) — biar sopan ke server         |
+| `-delay-ms`     | `300`   | Jeda antar-request (ms), global — biar sopan ke server |
 | `-output`       | (kosong)| Path file CSV buat nyimpen hasil (opsional)            |
+| `-workers`      | `4`     | Jumlah goroutine yang fetch halaman secara paralel     |
+| `-respect-robots`| `true` | Cek `robots.txt` dulu, skip URL yang di-disallow       |
 
 ## Cara kerja singkat
 
 1. `main.go` parse flag, panggil `crawler.Crawl(url, opts)`
-2. `Crawl` jalan di goroutine terpisah, pake BFS (queue) — mulai dari
-   URL awal, tiap iterasi fetch 1 halaman, ambil semua link-nya, masukin
-   ke antrian buat di-fetch berikutnya (kalau belum ngelewatin `depth`
-   dan belum pernah dikunjungin)
-3. Tiap halaman yang berhasil/gagal di-fetch dikirim lewat **channel**
-   ke `main.go`, yang langsung print ke terminal dan (kalau diminta)
-   nulis baris baru ke CSV
+2. `Crawl` jalan pakai **worker pool**: sejumlah `-workers` goroutine
+   nge-fetch halaman secara paralel dari satu antrian (channel) yang
+   sama, bukan satu-satu berurutan kayak versi awal.
+3. Tiap halaman yang berhasil/gagal/di-skip di-fetch dikirim lewat
+   **channel** ke `main.go`, yang langsung print ke terminal dan (kalau
+   diminta) nulis baris baru ke CSV
 4. `Fetch()` di `fetch.go` yang beneran download halaman: dia pake
    `regexp` buat nyari pola `<title>...</title>` dan
    `<a href="...">` — bukan HTML parser beneran (kayak `x/net/html`),
    tapi cukup buat kebanyakan halaman HTML standar. Trade-off-nya: bisa
    miss/salah pada HTML yang aneh/malformed, tapi gak butuh dependency
    luar.
+5. `robots.go` fetch & cache `robots.txt` per-host, cek apakah suatu URL
+   boleh di-crawl sebelum benar-benar di-fetch. Kalau di-disallow, URL
+   itu di-skip (muncul di output sebagai `SKIPPED ... blocked by
+   robots.txt`), bukan error fatal.
+
+### Soal concurrency (buat yang mau paham lebih dalam)
+
+`crawl.go` pakai beberapa primitif Go buat ngatur banyak goroutine yang
+kerja bareng:
+
+- **`chan job`** — antrian kerja bersama; semua worker `range` dari
+  channel yang sama, Go otomatis bagi-bagi job-nya (gak ada dua worker
+  yang dapet job yang sama)
+- **`sync.WaitGroup` (`pending`)** — nge-track "berapa job yang masih
+  ngantri/lagi dikerjain". Begitu itungannya balik ke nol, artinya
+  crawl udah selesai total, jadi channel job-nya ditutup
+- **`sync.Mutex`** (dua: `visitedMu`, `countMu`) — ngelindungin data yang
+  dipakai bareng-bareng (peta URL yang udah dikunjungin, counter jumlah
+  halaman yang di-fetch), biar gak ada dua goroutine yang nulis
+  bersamaan (race condition)
+- **`time.Ticker`** dipake sebagai **global rate limiter** — walaupun
+  `-workers` di-set tinggi, semua worker tetep berbagi satu "jatah
+  waktu" yang sama buat `-delay-ms`, jadi nambahin worker bikin lebih
+  banyak koneksi paralel, bukan nge-spam server lebih cepet
+
+Ini contoh bagus buat belajar goroutine + channel + WaitGroup + Mutex —
+4 hal yang paling sering muncul kalau lo mulai nulis kode Go yang
+concurrent.
 
 ## Etika crawling (penting!)
 
@@ -86,10 +117,10 @@ go build -o webcrawler.exe .
 
 ## Langkah selanjutnya (kalau mau lanjutin)
 
-- Tambah cek `robots.txt` otomatis sebelum crawl
 - Ganti regex parsing jadi HTML parser beneran (`golang.org/x/net/html`)
   biar lebih robust — butuh akses internet buat `go get`
-- Tambah concurrency (fetch beberapa halaman sekaligus, bukan satu-satu)
-  pake goroutine pool + rate limiter
 - Extract data lain juga (gambar, meta description, dll), bukan cuma
   title & link
+- Dukung wildcard (`*`, `$`) di parsing robots.txt (sekarang cuma
+  prefix-matching sederhana)
+- Tambah retry otomatis kalau fetch gagal karena timeout sementara
