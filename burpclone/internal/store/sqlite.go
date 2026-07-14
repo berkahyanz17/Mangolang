@@ -1,69 +1,104 @@
-// Package store handles persistent logging of proxied traffic to SQLite,
-// so the UI can browse history (like Burp's HTTP history tab) even after
-// a restart.
 package store
 
 import (
+	"database/sql"
 	"fmt"
-	"sync"
+
+	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
 
 // DB wraps a *sql.DB with the query helpers this package needs.
-//
-// TODO(phase 3): swap the in-memory placeholder fields below for a real
-// *sql.DB once a driver is chosen (modernc.org/sqlite recommended - pure
-// Go, no cgo).
 type DB struct {
-	// conn *sql.DB
-
-	mu     sync.Mutex
-	nextID int64
+	conn *sql.DB
 }
 
 // Open opens (or creates) the SQLite file at path and runs migrations.
-//
-// Phase 1 placeholder: returns an in-memory-only DB (nothing is persisted
-// to disk yet) so the proxy has something to log to while it's being
-// tested. Swap this out per the TODO below once phase 3 starts.
-//
-// TODO(phase 3):
-//  1. sql.Open("sqlite", path) (driver name depends on which package you
-//     `go get` - modernc.org/sqlite registers as "sqlite")
-//  2. Run a CREATE TABLE IF NOT EXISTS entries (...) matching the Entry
-//     struct in models.go. Keep it simple - one table is enough for MVP,
-//     no need to normalize headers into a separate table yet.
-//  3. Return &DB{conn: db}
 func Open(path string) (*DB, error) {
-	return &DB{}, nil
+	conn, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	if err := conn.Ping(); err != nil {
+		return nil, err
+	}
+
+	schema := `
+	CREATE TABLE IF NOT EXISTS entries (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp    DATETIME NOT NULL,
+		method       TEXT NOT NULL,
+		url          TEXT NOT NULL,
+		host         TEXT NOT NULL,
+		status_code  INTEGER NOT NULL DEFAULT 0,
+		req_headers  TEXT,
+		req_body     BLOB,
+		resp_headers TEXT,
+		resp_body    BLOB,
+		notes        TEXT
+	);`
+	if _, err := conn.Exec(schema); err != nil {
+		return nil, fmt.Errorf("store: failed to run migration: %w", err)
+	}
+
+	return &DB{conn: conn}, nil
 }
 
-// Close closes the underlying database connection.
 func (d *DB) Close() error {
-	return nil // no-op until phase 3 wires up a real *sql.DB
+	return d.conn.Close()
 }
 
 // Insert logs a new Entry and returns its assigned ID.
-//
-// Phase 1 placeholder: just hands out an incrementing ID, doesn't persist
-// anything. Real INSERT INTO entries (...) lands in phase 3.
 func (d *DB) Insert(e *Entry) (int64, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.nextID++
-	e.ID = d.nextID
-	return e.ID, nil
+	res, err := d.conn.Exec(
+		`INSERT INTO entries (timestamp, method, url, host, status_code, req_headers, req_body, resp_headers, resp_body, notes)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.Timestamp, e.Method, e.URL, e.Host, e.StatusCode,
+		e.ReqHeaders, e.ReqBody, e.RespHeaders, e.RespBody, e.Notes,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	e.ID = id
+	return id, nil
 }
 
-// List returns entries for the history view, most recent first.
-//
-// TODO(phase 3): SELECT ... ORDER BY id DESC LIMIT ? OFFSET ? - used by
-// the REST API in internal/server for pagination.
+// List returns entries for the history view, most recent first. Bodies
+// are omitted here for speed - fetch a single Entry via Get for full detail.
 func (d *DB) List(limit, offset int) ([]*Entry, error) {
-	return nil, fmt.Errorf("store: List not implemented yet (phase 3)")
+	rows, err := d.conn.Query(
+		`SELECT id, timestamp, method, url, host, status_code, req_headers, resp_headers, notes
+		 FROM entries ORDER BY id DESC LIMIT ? OFFSET ?`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []*Entry
+	for rows.Next() {
+		e := &Entry{}
+		if err := rows.Scan(&e.ID, &e.Timestamp, &e.Method, &e.URL, &e.Host, &e.StatusCode, &e.ReqHeaders, &e.RespHeaders, &e.Notes); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
 }
 
-// Get fetches a single entry by ID - used by the Repeater (phase 5) to
-// load a request the user wants to re-edit and resend.
+// Get fetches a single entry by ID, including full request/response bodies.
 func (d *DB) Get(id int64) (*Entry, error) {
-	return nil, fmt.Errorf("store: Get not implemented yet (phase 3)")
+	e := &Entry{}
+	row := d.conn.QueryRow(
+		`SELECT id, timestamp, method, url, host, status_code, req_headers, req_body, resp_headers, resp_body, notes
+		 FROM entries WHERE id = ?`, id,
+	)
+	if err := row.Scan(&e.ID, &e.Timestamp, &e.Method, &e.URL, &e.Host, &e.StatusCode, &e.ReqHeaders, &e.ReqBody, &e.RespHeaders, &e.RespBody, &e.Notes); err != nil {
+		return nil, err
+	}
+	return e, nil
 }

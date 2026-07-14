@@ -1,35 +1,82 @@
 package proxy
 
-import "net"
+import (
+	"bufio"
+	"bytes"
+	"crypto/tls"
+	"io"
+	"log"
+	"net"
+	"net/http"
+)
 
-// mitmTLS is the core trick of the whole proxy: after handleConnect sends
-// the "200 Connection Established" reply, the browser starts a TLS
-// handshake AS IF it were talking directly to the real server. We
-// intercept that handshake ourselves.
-//
-// TODO(phase 2):
-//  1. Wrap conn with tls.Server(conn, &tls.Config{
-//       GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-//           return p.opts.RootCA.GetOrCreateLeaf(hello.ServerName)
-//       },
-//     })
-//     GetCertificate lets us mint a fresh leaf cert on demand using the
-//     SNI hostname the browser sent in its ClientHello - this is exactly
-//     how Burp/mitmproxy do it, no need to know the domain in advance.
-//  2. tlsConn.Handshake() to actually perform it. If this fails (e.g. cert
-//     pinning, or the client refuses our root CA), fall back to
-//     passthrough tunnel or just close the connection.
-//  3. Now read the decrypted HTTP request from tlsConn with
-//     http.ReadRequest(bufio.NewReader(tlsConn)) - from here it's a normal
-//     HTTP request/response cycle in cleartext, same handling as
-//     handlePlainHTTP but talking over tlsConn instead of a raw conn.
-//  4. Open a SEPARATE outbound TLS connection to the real server:
-//     tls.Dial("tcp", targetHostPort, &tls.Config{ServerName: host})
-//     forward the request there, read the response, log it (phase 3),
-//     optionally hold it in the interceptor (phase 4), then write the
-//     response back down tlsConn to the browser.
-//  5. Loop (a single TLS connection can carry multiple HTTP requests via
-//     keep-alive) until the client closes the connection.
-func (p *Proxy) mitmTLS(conn net.Conn, host string) {
-	panic("TODO: implement mitmTLS (phase 2)")
+func (p *Proxy) mitmTLS(conn net.Conn, host, hostPort string) {
+	tlsConn := tls.Server(conn, &tls.Config{
+		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			name := hello.ServerName
+			if name == "" {
+				name = host
+			}
+			return p.opts.RootCA.GetOrCreateLeaf(name)
+		},
+	})
+	defer tlsConn.Close()
+
+	if err := tlsConn.Handshake(); err != nil {
+		log.Printf("mitm: handshake failed for %s: %v", host, err)
+		return
+	}
+
+	reader := bufio.NewReader(tlsConn)
+	for {
+		req, err := http.ReadRequest(reader)
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("mitm: failed to read request from %s: %v", host, err)
+			}
+			return
+		}
+
+		req.URL.Scheme = "https"
+		if req.URL.Host == "" {
+			req.URL.Host = req.Host
+		}
+		if req.URL.Host == "" {
+			req.URL.Host = hostPort
+		}
+		req.RequestURI = ""
+
+		for _, h := range hopByHopHeaders {
+			req.Header.Del(h)
+		}
+
+		var reqBody []byte
+		if req.Body != nil {
+			reqBody, _ = io.ReadAll(req.Body)
+			req.Body.Close()
+			req.Body = io.NopCloser(bytes.NewReader(reqBody))
+		}
+		var reqHeaderBuf bytes.Buffer
+		req.Header.Write(&reqHeaderBuf)
+
+		resp, err := transport.RoundTrip(req)
+		if err != nil {
+			log.Printf("mitm: upstream request failed for %s: %v", req.URL, err)
+			http.Error(newConnWriter(tlsConn), "proxy: upstream request failed: "+err.Error(), http.StatusBadGateway)
+			logEntry(p.opts.Store, req, nil, reqBody, nil, reqHeaderBuf.String(), "")
+			return
+		}
+
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+		var respHeaderBuf bytes.Buffer
+		resp.Header.Write(&respHeaderBuf)
+
+		if err := resp.Write(tlsConn); err != nil {
+			log.Printf("mitm: failed to write response back to client: %v", err)
+			return
+		}
+		logEntry(p.opts.Store, req, resp, reqBody, respBody, reqHeaderBuf.String(), respHeaderBuf.String())
+	}
 }

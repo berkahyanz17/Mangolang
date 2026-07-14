@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"log"
 	"net"
@@ -69,66 +70,74 @@ func (p *Proxy) handleConn(conn net.Conn) {
 	p.handlePlainHTTP(conn, req)
 }
 
-// handlePlainHTTP forwards a single non-HTTPS proxied request to its real
-// destination and writes the response straight back to the client.
 func (p *Proxy) handlePlainHTTP(conn net.Conn, req *http.Request) {
-	// For a forward proxy, req.URL is the full absolute URL
-	// (e.g. "http://example.com/path") because the client sent it as
-	// "GET http://example.com/path HTTP/1.1", not "GET /path HTTP/1.1".
 	if !req.URL.IsAbs() {
 		http.Error(newConnWriter(conn), "proxy: request URI must be absolute", http.StatusBadRequest)
 		return
 	}
 
-	// Strip hop-by-hop headers before forwarding upstream.
 	for _, h := range hopByHopHeaders {
 		req.Header.Del(h)
 	}
 
-	// RequestURI must be empty on the client side of a Transport.RoundTrip -
-	// it's only valid on requests read by a server (which is what we just did).
+	// Body is a single-read stream - buffer it so we can both forward it
+	// upstream AND log it afterward.
+	var reqBody []byte
+	if req.Body != nil {
+		reqBody, _ = io.ReadAll(req.Body)
+		req.Body.Close()
+		req.Body = io.NopCloser(bytes.NewReader(reqBody))
+	}
+	var reqHeaderBuf bytes.Buffer
+	req.Header.Write(&reqHeaderBuf)
+
 	req.RequestURI = ""
 
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		log.Printf("upstream request failed for %s: %v", req.URL, err)
 		http.Error(newConnWriter(conn), "proxy: upstream request failed: "+err.Error(), http.StatusBadGateway)
-		logEntry(p.opts.Store, req, nil)
+		logEntry(p.opts.Store, req, nil, reqBody, nil, reqHeaderBuf.String(), "")
 		return
 	}
 	defer resp.Body.Close()
 
-	// Response.Write serializes a client-side *http.Response back into
-	// valid HTTP/1.x wire format - exactly what we need to relay it
-	// untouched to the browser.
+	respBody, _ := io.ReadAll(resp.Body)
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+	var respHeaderBuf bytes.Buffer
+	resp.Header.Write(&respHeaderBuf)
+
 	if err := resp.Write(conn); err != nil {
 		log.Printf("failed to write response back to client: %v", err)
 	}
 
-	logEntry(p.opts.Store, req, resp)
+	logEntry(p.opts.Store, req, resp, reqBody, respBody, reqHeaderBuf.String(), respHeaderBuf.String())
 }
 
 // logEntry records the request/response pair to the datastore.
-//
-// TODO(phase 3): once store.DB has a real Insert, this should build a
-// store.Entry from req/resp (method, URL, status code, headers, and - if
-// you want full bodies logged - read+restore req.Body/resp.Body via
-// io.TeeReader before they're consumed above, since both are single-read
-// streams).
-func logEntry(db *store.DB, req *http.Request, resp *http.Response) {
+func logEntry(db *store.DB, req *http.Request, resp *http.Response, reqBody, respBody []byte, reqHeaders, respHeaders string) {
 	status := 0
 	if resp != nil {
 		status = resp.StatusCode
 	}
 	log.Printf("%s %s -> %d", req.Method, req.URL, status)
-	// db.Insert(&store.Entry{...}) once phase 3 lands.
-	_ = db
+
+	entry := &store.Entry{
+		Timestamp:   time.Now(),
+		Method:      req.Method,
+		URL:         req.URL.String(),
+		Host:        req.URL.Host,
+		StatusCode:  status,
+		ReqHeaders:  reqHeaders,
+		ReqBody:     reqBody,
+		RespHeaders: respHeaders,
+		RespBody:    respBody,
+	}
+	if _, err := db.Insert(entry); err != nil {
+		log.Printf("store: failed to log entry: %v", err)
+	}
 }
 
-// newConnWriter adapts a raw net.Conn so we can use http.Error (which
-// wants an http.ResponseWriter) to send a quick error response directly
-// over the connection during phase 1, before any Transport response
-// exists to write back.
 func newConnWriter(conn net.Conn) http.ResponseWriter {
 	return &connWriter{conn: conn, header: http.Header{}}
 }
