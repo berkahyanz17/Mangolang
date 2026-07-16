@@ -6,9 +6,45 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>burpclone</h1>
-  <p>Placeholder UI - phase 6. Rencana tab: History, Intercept, Repeater.</p>
-  <div id="app"></div>
+  <header>
+    <h1>burpclone</h1>
+    <div id="intercept-status">
+      Intercept: <span id="intercept-state">OFF</span>
+      <button id="intercept-toggle">Toggle</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="history">History</button>
+    <button class="tab-btn" data-tab="intercept">Intercept</button>
+    <button class="tab-btn" data-tab="repeater">Repeater</button>
+  </nav>
+
+  <section id="tab-history" class="tab active">
+    <table id="history-table">
+      <thead><tr><th>ID</th><th>Method</th><th>URL</th><th>Status</th><th>Time</th></tr></thead>
+      <tbody id="history-body"></tbody>
+    </table>
+    <div id="history-detail"></div>
+  </section>
+
+  <section id="tab-intercept" class="tab">
+    <div id="intercept-list"></div>
+  </section>
+
+  <section id="tab-repeater" class="tab">
+    <div class="repeater-form">
+      <select id="rep-method">
+        <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option>
+      </select>
+      <input id="rep-url" placeholder="https://example.com">
+      <button id="rep-send">Send</button>
+    </div>
+    <textarea id="rep-headers" placeholder="Headers, contoh:&#10;User-Agent: burpclone" rows="4"></textarea>
+    <textarea id="rep-body" placeholder="Body" rows="6"></textarea>
+    <div id="rep-response"></div>
+  </section>
+
   <script src="app.js"></script>
 </body>
 </html>

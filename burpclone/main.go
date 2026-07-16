@@ -57,13 +57,13 @@ func main() {
 	// the UI to list pending requests and call Forward(id)/Drop(id)/Edit(id, ...).
 	interceptor := intercept.NewQueue(*interceptOn)
 
-	// --- Phase 1+2: proxy engine ------------------------------------------
-	// TODO(phase 1): proxy.New should set up a plain HTTP forward proxy.
-	// TODO(phase 2): extend it to handle CONNECT + MITM using rootCA.
+	hub := server.NewHub()
+
 	p := proxy.New(proxy.Options{
 		RootCA:      rootCA,
 		Store:       db,
 		Interceptor: interceptor,
+		Broadcaster: hub,
 	})
 
 	go func() {
@@ -73,15 +73,10 @@ func main() {
 		}
 	}()
 
-	// --- Phase 6: web UI (REST + WebSocket) --------------------------------
-	// TODO(phase 6): server.New should wire up:
-	//   - REST endpoints to browse history from the store
-	//   - REST endpoints to control the interceptor (list/forward/drop/edit)
-	//   - REST endpoint for the Repeater (resend an edited raw request)
-	//   - WebSocket endpoint streaming new traffic as it happens
 	ui := server.New(server.Options{
 		Store:       db,
 		Interceptor: interceptor,
+		Hub:         hub,
 	})
 
 	log.Printf("web UI listening on %s", *uiAddr)

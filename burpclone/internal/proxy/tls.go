@@ -63,7 +63,7 @@ func (p *Proxy) mitmTLS(conn net.Conn, host, hostPort string) {
 		if !proceed {
 			log.Printf("DROPPED %s %s", req.Method, req.URL)
 			writeDropped(tlsConn)
-			logEntry(p.opts.Store, req, nil, reqBody, nil, reqHeaderBuf.String(), "")
+			p.logEntry(req, nil, reqBody, nil, reqHeaderBuf.String(), "")
 			continue // keep serving next request on this same TLS connection
 		}
 		reqBody = editedBody
@@ -72,7 +72,7 @@ func (p *Proxy) mitmTLS(conn net.Conn, host, hostPort string) {
 		if err != nil {
 			log.Printf("mitm: upstream request failed for %s: %v", req.URL, err)
 			http.Error(newConnWriter(tlsConn), "proxy: upstream request failed: "+err.Error(), http.StatusBadGateway)
-			logEntry(p.opts.Store, req, nil, reqBody, nil, reqHeaderBuf.String(), "")
+			p.logEntry(req, nil, reqBody, nil, reqHeaderBuf.String(), "")
 			return
 		}
 
@@ -86,6 +86,6 @@ func (p *Proxy) mitmTLS(conn net.Conn, host, hostPort string) {
 			log.Printf("mitm: failed to write response back to client: %v", err)
 			return
 		}
-		logEntry(p.opts.Store, req, resp, reqBody, respBody, reqHeaderBuf.String(), respHeaderBuf.String())
+		p.logEntry(req, resp, reqBody, respBody, reqHeaderBuf.String(), respHeaderBuf.String())
 	}
 }

@@ -1,24 +1,72 @@
 package server
 
-import "net/http"
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"sync"
 
-// registerWS handles the WebSocket endpoint the frontend connects to for
-// a live feed of new traffic - every time proxy/listener.go or
-// proxy/tls.go logs a new Entry to the store, it should also be pushed
-// out to all connected WebSocket clients.
-//
-// TODO(phase 6):
-//  1. Upgrade the HTTP connection using your chosen WS library
-//     (gorilla/websocket: websocket.Upgrader{}.Upgrade(w, r, nil)).
-//  2. Register the new connection in a small broadcast hub (a
-//     map[*websocket.Conn]bool + mutex, or a fan-out channel) so the
-//     proxy package can push new entries to all connected clients.
-//  3. The cleanest wiring: give the Proxy a `chan *store.Entry` in its
-//     Options; every time it logs an Entry (phase 3), it also sends it to
-//     this channel. A goroutine in this package reads from that channel
-//     and broadcasts the JSON-encoded Entry to all connected WS clients.
-//  4. Handle client disconnects (read loop erroring out) by removing them
-//     from the hub.
+	"github.com/gorilla/websocket"
+
+	"burpclone/internal/store"
+)
+
+// Hub tracks connected WebSocket clients and broadcasts new entries to
+// all of them. Implements proxy.Broadcaster (Broadcast(*store.Entry)).
+type Hub struct {
+	mu      sync.Mutex
+	clients map[*websocket.Conn]bool
+}
+
+func NewHub() *Hub {
+	return &Hub{clients: make(map[*websocket.Conn]bool)}
+}
+
+func (h *Hub) Broadcast(e *store.Entry) {
+	msg, err := json.Marshal(e)
+	if err != nil {
+		log.Printf("hub: failed to marshal entry: %v", err)
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for conn := range h.clients {
+		if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			conn.Close()
+			delete(h.clients, conn)
+		}
+	}
+}
+
+// upgrader.CheckOrigin always allows - this is a local dev tool bound to
+// 127.0.0.1, not a public multi-tenant service, so origin checking isn't
+// meaningful here.
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
 func (s *Server) registerWS(w http.ResponseWriter, r *http.Request) {
-	panic("TODO: implement registerWS (phase 6)")
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("ws upgrade failed: %v", err)
+		return
+	}
+
+	s.hub.mu.Lock()
+	s.hub.clients[conn] = true
+	s.hub.mu.Unlock()
+
+	// Read loop purely to detect disconnects - the client never sends us
+	// anything meaningful on this socket, it's push-only.
+	defer func() {
+		s.hub.mu.Lock()
+		delete(s.hub.clients, conn)
+		s.hub.mu.Unlock()
+		conn.Close()
+	}()
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			return
+		}
+	}
 }

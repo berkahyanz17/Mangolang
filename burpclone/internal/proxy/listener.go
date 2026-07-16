@@ -95,7 +95,7 @@ func (p *Proxy) handlePlainHTTP(conn net.Conn, req *http.Request) {
 	if !proceed {
 		log.Printf("DROPPED %s %s", req.Method, req.URL)
 		writeDropped(conn)
-		logEntry(p.opts.Store, req, nil, reqBody, nil, reqHeaderBuf.String(), "")
+		p.logEntry(req, nil, reqBody, nil, reqHeaderBuf.String(), "")
 		return
 	}
 	reqBody = editedBody
@@ -106,7 +106,7 @@ func (p *Proxy) handlePlainHTTP(conn net.Conn, req *http.Request) {
 	if err != nil {
 		log.Printf("upstream request failed for %s: %v", req.URL, err)
 		http.Error(newConnWriter(conn), "proxy: upstream request failed: "+err.Error(), http.StatusBadGateway)
-		logEntry(p.opts.Store, req, nil, reqBody, nil, reqHeaderBuf.String(), "")
+		p.logEntry(req, nil, reqBody, nil, reqHeaderBuf.String(), "")
 		return
 	}
 	defer resp.Body.Close()
@@ -120,11 +120,12 @@ func (p *Proxy) handlePlainHTTP(conn net.Conn, req *http.Request) {
 		log.Printf("failed to write response back to client: %v", err)
 	}
 
-	logEntry(p.opts.Store, req, resp, reqBody, respBody, reqHeaderBuf.String(), respHeaderBuf.String())
+	p.logEntry(req, resp, reqBody, respBody, reqHeaderBuf.String(), respHeaderBuf.String())
 }
 
-// logEntry records the request/response pair to the datastore.
-func logEntry(db *store.DB, req *http.Request, resp *http.Response, reqBody, respBody []byte, reqHeaders, respHeaders string) {
+// logEntry records the request/response pair to the datastore and pushes
+// it out to any connected WebSocket clients via the Broadcaster.
+func (p *Proxy) logEntry(req *http.Request, resp *http.Response, reqBody, respBody []byte, reqHeaders, respHeaders string) {
 	status := 0
 	if resp != nil {
 		status = resp.StatusCode
@@ -142,8 +143,12 @@ func logEntry(db *store.DB, req *http.Request, resp *http.Response, reqBody, res
 		RespHeaders: respHeaders,
 		RespBody:    respBody,
 	}
-	if _, err := db.Insert(entry); err != nil {
+	if _, err := p.opts.Store.Insert(entry); err != nil {
 		log.Printf("store: failed to log entry: %v", err)
+		return
+	}
+	if p.opts.Broadcaster != nil {
+		p.opts.Broadcaster.Broadcast(entry)
 	}
 }
 
@@ -180,7 +185,10 @@ func (w *connWriter) WriteHeader(statusCode int) {
 	sb.WriteString("\r\n")
 	for k, vv := range w.header {
 		for _, v := range vv {
-			sb.WriteString(k + ": " + v + "\r\n")
+			sb.WriteString(k)
+			sb.WriteString(": ")
+			sb.WriteString(v)
+			sb.WriteString("\r\n")
 		}
 	}
 	sb.WriteString("\r\n")

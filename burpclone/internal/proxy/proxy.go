@@ -12,13 +12,18 @@ import (
 	"burpclone/internal/store"
 )
 
-// Options bundles everything the proxy needs, following the same pattern
-// as crawler.Options / scanner.Options in the other Mangolang projects:
-// one struct instead of a long parameter list.
+// Broadcaster receives a copy of every logged entry, used to push live
+// updates to WebSocket clients connected to the UI (see
+// internal/server/ws.go).
+type Broadcaster interface {
+	Broadcast(e *store.Entry)
+}
+
 type Options struct {
 	RootCA      *ca.Authority
 	Store       *store.DB
 	Interceptor *intercept.Queue
+	Broadcaster Broadcaster
 }
 
 // Proxy is the top-level proxy server.

@@ -18,7 +18,10 @@ go 1.25.0
 //   go get github.com/gorilla/websocket
 // then `go mod tidy`.
 
-require modernc.org/sqlite v1.53.0
+require (
+	github.com/gorilla/websocket v1.5.3
+	modernc.org/sqlite v1.53.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
