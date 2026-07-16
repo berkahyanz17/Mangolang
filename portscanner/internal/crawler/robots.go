@@ -141,6 +141,9 @@ func (rc *RobotsChecker) fetchAndParse(scheme, host string) *robotsRules {
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return nil
+	}
 
 	return rules
 }
