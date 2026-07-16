@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const marker = "§payload§"
+const marker = "{{payload}}"
 
 // Attack is the user-supplied config for one Intruder run.
 type Attack struct {

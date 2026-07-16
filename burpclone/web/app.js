@@ -25,6 +25,29 @@ $all('.tab-btn').forEach(btn => {
   });
 });
 
+document.getElementById('browse-go').addEventListener('click', async () => {
+  const method = document.getElementById('browse-method').value;
+  const url = document.getElementById('browse-url').value;
+  if (!url) return;
+
+  const btn = document.getElementById('browse-go');
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const res = await fetch('/api/browse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method, url }),
+    });
+    const data = await res.json();
+    if (data.error) alert('Error: ' + data.error);
+    // gak perlu manual refresh - entry baru otomatis muncul lewat WebSocket
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Go';
+  }
+});
+
 // --- History ---
 function renderHistoryRow(e, prepend) {
   const tbody = document.getElementById('history-body');
@@ -63,6 +86,17 @@ async function showHistoryDetail(id) {
   `;
   renderInspectorParsed(e.URL, e.ReqHeaders);
 }
+
+document.getElementById('clear-history').addEventListener('click', async () => {
+  if (!confirm('Yakin mau hapus semua History? Ini gak bisa di-undo.')) return;
+  const res = await fetch('/api/history', { method: 'DELETE' });
+  if (res.ok) {
+    document.getElementById('history-body').innerHTML = '';
+    document.getElementById('history-detail').innerHTML = '';
+  } else {
+    alert('Gagal clear history: ' + await res.text());
+  }
+});
 
 // --- WebSocket live feed ---
 function connectWS() {
@@ -122,17 +156,38 @@ document.getElementById('rep-send').addEventListener('click', async () => {
   const url = document.getElementById('rep-url').value;
   const headers = document.getElementById('rep-headers').value;
   const body = document.getElementById('rep-body').value;
-  const res = await fetch('/api/repeater/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ method, url, headers, body }),
-  });
-  const data = await res.json();
+
+  const btn = document.getElementById('rep-send');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  let data;
+  try {
+    const res = await fetch('/api/repeater/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method, url, headers, body }),
+    });
+    data = await res.json();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send';
+  }
+
+  // Request-sent section shows exactly what was fired (method/url/headers/
+  // body as typed) - mirrors Burp's layout of request panel + response
+  // panel stacked, both visible at once.
   document.getElementById('rep-response').innerHTML = `
-    <h4>Status: ${data.status_code} (${data.duration_ms}ms)</h4>
-    ${data.error ? `<p class="error">${escapeHtml(data.error)}</p>` : ''}
-    <h4>Headers</h4><pre>${escapeHtml(data.headers)}</pre>
-    <h4>Body</h4><pre>${escapeHtml(data.body)}</pre>
+    <h3>Request sent</h3>
+    <pre>${escapeHtml(method)} ${escapeHtml(url)}</pre>
+    <h4>Request headers</h4><pre>${escapeHtml(headers) || '(kosong)'}</pre>
+    <h4>Request body</h4><pre>${escapeHtml(body) || '(kosong)'}</pre>
+
+    <h3>Response ${data.error ? '' : `- ${data.status_code} (${data.duration_ms}ms)`}</h3>
+    ${data.error ? `<p class="error">${escapeHtml(data.error)}</p>` : `
+      <h4>Response headers</h4><pre>${escapeHtml(data.headers)}</pre>
+      <h4>Response body</h4><pre>${escapeHtml(data.body)}</pre>
+    `}
   `;
 });
 
@@ -327,8 +382,8 @@ async function pollIntruderResults() {
     tr.innerHTML = `
       <td>${escapeHtml(r.payload)}</td>
       <td>${r.status_code || '-'}</td>
-      <td>${r.body_length || '-'}</td>
-      <td>${Math.round((r.duration || 0) / 1e6)}</td>
+      <td>${r.body_length}</td>
+      <td>${Math.round((r.duration_ms || 0) / 1e6)}</td>
       <td class="error">${escapeHtml(r.error || '')}</td>
     `;
     tbody.appendChild(tr);

@@ -8,10 +8,6 @@
 <body>
   <header>
     <h1>burpclone</h1>
-    <div id="intercept-status">
-      Intercept: <span id="intercept-state">OFF</span>
-      <button id="intercept-toggle">Toggle</button>
-    </div>
   </header>
 
   <nav class="tabs">
@@ -24,9 +20,15 @@
   </nav>
 
   <section id="tab-history" class="tab active">
+    <div class="browse-bar">
+      <select id="browse-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
+      <input id="browse-url" placeholder="https://example.com - kirim request tanpa perlu terminal">
+      <button id="browse-go">Go</button>
+    </div>
     <div class="export-buttons">
       <button id="export-json">Export JSON</button>
       <button id="export-csv">Export CSV</button>
+      <button id="clear-history" class="danger">Clear History</button>
     </div>
     <table id="history-table">
       <thead><tr><th>ID</th><th>Method</th><th>URL</th><th>Status</th><th>Time</th></tr></thead>
@@ -36,6 +38,10 @@
   </section>
 
   <section id="tab-intercept" class="tab">
+    <div id="intercept-status">
+      Intercept: <span id="intercept-state">OFF</span>
+      <button id="intercept-toggle">Toggle</button>
+    </div>
     <div id="intercept-list"></div>
   </section>
 
@@ -102,10 +108,10 @@
       <select id="intr-method">
         <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
       </select>
-      <input id="intr-url" placeholder="https://example.com/login?user=§payload§">
+      <input id="intr-url" placeholder="https://example.com/login?user={{payload}}">
     </div>
-    <textarea id="intr-headers" placeholder="Headers (opsional), boleh pakai §payload§" rows="3"></textarea>
-    <textarea id="intr-body" placeholder="Body (opsional), boleh pakai §payload§" rows="3"></textarea>
+    <textarea id="intr-headers" placeholder="Headers (opsional), boleh pakai {{payload}}" rows="3"></textarea>
+    <textarea id="intr-body" placeholder="Body (opsional), boleh pakai {{payload}}" rows="3"></textarea>
     <textarea id="intr-payloads" placeholder="Satu payload per baris" rows="6"></textarea>
     <div class="intruder-controls">
       <label>Concurrency: <input id="intr-concurrency" type="number" value="5" style="width:60px"></label>
@@ -118,7 +124,7 @@
       <tbody id="intruder-body"></tbody>
     </table>
   </section>
-  
+
   <script src="app.js"></script>
 </body>
 </html>

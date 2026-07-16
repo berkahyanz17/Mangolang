@@ -127,3 +127,11 @@ func (d *DB) All() ([]*Entry, error) {
 	}
 	return entries, rows.Err()
 }
+
+// Clear deletes every entry from history - used by the "Clear History"
+// button in the UI. Does not touch the SQLite file itself, just empties
+// the table.
+func (d *DB) Clear() error {
+	_, err := d.conn.Exec(`DELETE FROM entries`)
+	return err
+}

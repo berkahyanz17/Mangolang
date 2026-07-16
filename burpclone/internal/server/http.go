@@ -4,9 +4,13 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"net/url"
 	"strconv"
+	"time"
 
+	"burpclone/internal/proxy"
 	"burpclone/internal/intercept"
 	"burpclone/internal/repeater"
 	"burpclone/internal/reqedit"
@@ -15,6 +19,7 @@ import (
 )
 
 type Options struct {
+	Proxy       *proxy.Proxy
 	Store       *store.DB
 	Interceptor *intercept.Queue
 	Hub         *Hub
@@ -35,9 +40,11 @@ func New(opts Options) *Server {
 }
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("POST /api/browse", s.handleBrowse)
 	s.mux.HandleFunc("GET /api/history", s.handleHistory)
 	s.mux.HandleFunc("GET /api/history/{id}", s.handleHistoryDetail)
 	s.mux.HandleFunc("GET /api/history/export", s.handleHistoryExport)
+	s.mux.HandleFunc("DELETE /api/history", s.handleHistoryClear)
 	s.mux.HandleFunc("GET /api/intercept", s.handleListIntercept)
 	s.mux.HandleFunc("POST /api/intercept/toggle", s.handleToggleIntercept)
 	s.mux.HandleFunc("POST /api/intercept/{id}/forward", s.handleForward)
@@ -53,6 +60,33 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /ws", s.registerWS)
 
 	s.mux.Handle("/", http.FileServer(http.Dir("./web")))
+}
+
+func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Method  string `json:"method"`
+		URL     string `json:"url"`
+		Headers string `json:"headers"`
+		Body    string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if in.URL == "" {
+		http.Error(w, "url is required", http.StatusBadRequest)
+		return
+	}
+
+	result := s.opts.Proxy.Browse(proxy.BrowseRequest{
+		Method:  in.Method,
+		URL:     in.URL,
+		Headers: in.Headers,
+		Body:    in.Body,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +140,14 @@ func (s *Server) handleHistoryExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeHistoryJSON(w, entries)
+}
+
+func (s *Server) handleHistoryClear(w http.ResponseWriter, r *http.Request) {
+	if err := s.opts.Store.Clear(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) writeHistoryJSON(w http.ResponseWriter, entries []*store.Entry) {
@@ -224,6 +266,29 @@ func (s *Server) handleRepeaterSend(w http.ResponseWriter, r *http.Request) {
 		Body:    []byte(reqIn.Body),
 	})
 
+	// Log to History too - same store/broadcast path as normal proxied
+	// traffic and Browse, but deliberately still skips the Interceptor
+	// (Repeater must never block waiting for Forward/Drop, that defeats
+	// its purpose as a fast iterate-and-resend tool).
+	status := resp.StatusCode
+	entry := &store.Entry{
+		Timestamp:   time.Now(),
+		Method:      reqIn.Method,
+		URL:         reqIn.URL,
+		Host:        hostFromURL(reqIn.URL),
+		StatusCode:  status,
+		ReqHeaders:  reqIn.Headers,
+		ReqBody:     []byte(reqIn.Body),
+		RespHeaders: resp.Headers,
+		RespBody:    resp.Body,
+		Notes:       "sent via Repeater",
+	}
+	if _, err := s.opts.Store.Insert(entry); err != nil {
+		log.Printf("store: failed to log repeater entry: %v", err)
+	} else if s.hub != nil {
+		s.hub.Broadcast(entry)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"status_code": resp.StatusCode,
@@ -232,6 +297,16 @@ func (s *Server) handleRepeaterSend(w http.ResponseWriter, r *http.Request) {
 		"duration_ms": resp.Duration.Milliseconds(),
 		"error":       resp.Err,
 	})
+}
+
+// hostFromURL extracts just the host portion for the Entry.Host column,
+// matching what the proxy pipeline stores for normal traffic.
+func hostFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {

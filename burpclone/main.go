@@ -91,6 +91,7 @@ func main() {
 	intruderRegistry := intruder.NewRegistry()
 
 	ui := server.New(server.Options{
+		Proxy:       p,
 		Store:       db,
 		Interceptor: interceptor,
 		Hub:         hub,

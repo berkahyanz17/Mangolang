@@ -109,3 +109,15 @@ button:hover { background: #3a5a7a; }
 .intruder-form { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
 .intruder-controls { display: flex; align-items: center; gap: 1rem; margin: 0.5rem 0 1rem; }
 .intruder-controls label { font-size: 0.9rem; color: #ccc; }
+.browse-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.browse-bar select { background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 4px; }
+#intercept-status { margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #333; }
+#rep-response h3 {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #333;
+  color: #4af;
+}
+#rep-response h3:first-child { margin-top: 0; border-top: none; padding-top: 0; }
+button.danger { background: #6a2a2a; }
+button.danger:hover { background: #7a3a3a; }
