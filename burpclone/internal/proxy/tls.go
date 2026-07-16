@@ -59,6 +59,15 @@ func (p *Proxy) mitmTLS(conn net.Conn, host, hostPort string) {
 		var reqHeaderBuf bytes.Buffer
 		req.Header.Write(&reqHeaderBuf)
 
+		proceed, editedBody := interceptAndApply(p.opts.Interceptor, req, reqHeaderBuf.String(), reqBody)
+		if !proceed {
+			log.Printf("DROPPED %s %s", req.Method, req.URL)
+			writeDropped(tlsConn)
+			logEntry(p.opts.Store, req, nil, reqBody, nil, reqHeaderBuf.String(), "")
+			continue // keep serving next request on this same TLS connection
+		}
+		reqBody = editedBody
+
 		resp, err := transport.RoundTrip(req)
 		if err != nil {
 			log.Printf("mitm: upstream request failed for %s: %v", req.URL, err)
