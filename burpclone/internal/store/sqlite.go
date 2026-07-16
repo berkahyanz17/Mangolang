@@ -102,3 +102,28 @@ func (d *DB) Get(id int64) (*Entry, error) {
 	}
 	return e, nil
 }
+
+// All returns every entry, including full request/response bodies, most
+// recent first - used by the export endpoint. Unlike List (which is for
+// paginated UI display and skips bodies), this pulls everything since an
+// export should be a complete record.
+func (d *DB) All() ([]*Entry, error) {
+	rows, err := d.conn.Query(
+		`SELECT id, timestamp, method, url, host, status_code, req_headers, req_body, resp_headers, resp_body, notes
+		 FROM entries ORDER BY id DESC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []*Entry
+	for rows.Next() {
+		e := &Entry{}
+		if err := rows.Scan(&e.ID, &e.Timestamp, &e.Method, &e.URL, &e.Host, &e.StatusCode, &e.ReqHeaders, &e.ReqBody, &e.RespHeaders, &e.RespBody, &e.Notes); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}

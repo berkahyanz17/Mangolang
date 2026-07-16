@@ -11,16 +11,27 @@ import (
 	"strings"
 
 	"burpclone/internal/intercept"
+	"burpclone/internal/reqedit"
 )
 
-// interceptAndApply routes the request through the interceptor queue. If
-// interception is off, Hold returns immediately with Forward (no pause).
-// If it's on, this blocks until someone calls Resolve via the REST API
-// (see internal/server/http.go).
-//
-// Returns proceed=false if the request was dropped - caller should send a
-// "dropped" response and stop instead of forwarding upstream.
-func interceptAndApply(q *intercept.Queue, req *http.Request, headerText string, body []byte) (proceed bool, newBody []byte) {
+// interceptAndApply applies Match & Replace rules first (these run
+// automatically on every request, on or off - they're "set and forget",
+// not something reviewed manually), then routes through the interceptor
+// queue for manual hold/forward/drop if interception is on.
+func interceptAndApply(q *intercept.Queue, rules *reqedit.RuleStore, req *http.Request, headerText string, body []byte) (proceed bool, newBody []byte) {
+	if rules != nil {
+		if newURL := rules.Apply(reqedit.TargetURL, req.URL.String()); newURL != req.URL.String() {
+			if u, err := url.Parse(newURL); err == nil {
+				req.URL = u
+			}
+		}
+		headerText = rules.Apply(reqedit.TargetHeader, headerText)
+		if h, err := parseHeaderText(headerText); err == nil {
+			req.Header = h
+		}
+		body = []byte(rules.Apply(reqedit.TargetBody, string(body)))
+	}
+
 	decision := q.Hold(req.Method, req.URL.String(), headerText, body)
 	if decision.Action == intercept.Drop {
 		return false, nil
@@ -49,8 +60,6 @@ func interceptAndApply(q *intercept.Queue, req *http.Request, headerText string,
 	return true, body
 }
 
-// parseHeaderText turns raw "Key: value\r\n..." text (as edited by hand
-// in the UI) back into an http.Header.
 func parseHeaderText(raw string) (http.Header, error) {
 	if strings.TrimSpace(raw) == "" {
 		return http.Header{}, nil

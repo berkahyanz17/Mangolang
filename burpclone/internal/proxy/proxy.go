@@ -9,6 +9,7 @@ import (
 
 	"burpclone/internal/ca"
 	"burpclone/internal/intercept"
+	"burpclone/internal/reqedit"
 	"burpclone/internal/store"
 )
 
@@ -24,6 +25,8 @@ type Options struct {
 	Store       *store.DB
 	Interceptor *intercept.Queue
 	Broadcaster Broadcaster
+	ExcludeHosts []string
+	MatchReplace *reqedit.RuleStore
 }
 
 // Proxy is the top-level proxy server.

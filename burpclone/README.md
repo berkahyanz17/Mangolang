@@ -72,21 +72,62 @@ Lalu:
 
 **Catatan curl di Windows:** kalau ketemu error `CRYPT_E_NO_REVOCATION_CHECK`, tambahin flag `--ssl-no-revoke` — ini normal buat CA self-signed tanpa CRL/OCSP endpoint, bukan bug.
 
-## Rencana fitur lanjutan
+## Roadmap fitur lanjutan
 
-Di luar scope MVP, urutan berdasarkan value/effort:
+Di luar scope MVP, disusun berdasarkan urutan pengerjaan (bukan cuma
+value/effort, tapi juga dependency antar fitur):
 
-| Fitur | Kenapa berguna | Effort |
-|---|---|---|
-| **Scope / exclude-list** | Skip MITM buat domain tertentu (misal banking apps yang certificate-pinning, jadi request-nya lewat passthrough tunnel biasa daripada di-reject) | Kecil — tambah field `[]string` di `proxy.Options`, cek host sebelum panggil `mitmTLS` di `connect.go` |
-| **Export history** | Simpen hasil intercept ke JSON/CSV/format Burp-compatible buat dibagi atau diproses tools lain | Kecil — endpoint baru di `server/http.go`, query `store.List` lalu marshal |
-| **Match & Replace** | Auto-replace header/body pattern tertentu di semua trafik (misal strip tracking header, inject auth token otomatis) | Sedang — butuh struct rule (regex in/out), diterapkan di `interceptAndApply` sebelum/sesudah decision |
-| **Auth buat UI** | Proteksi `:8000` biar gak sembarang orang di jaringan yang sama bisa buka history/intercept/repeater lo | Sedang — basic auth middleware di `server/http.go`, atau token dari flag CLI |
-| **Repeater history** | Simpen riwayat request yang pernah dikirim lewat Repeater (sekarang standalone, sengaja gak nyatet — lihat catatan desain di `ARCHITECTURE.md`) | Sedang — tabel SQLite terpisah, `repeater.Send` opsional nerima `*store.DB` |
-| **Scripting/extension** | Custom logic per-request (semacam Burp extension sederhana), misal auto-decode JWT di UI | Besar — butuh desain plugin API sendiri, di luar prioritas MVP |
-| **Passthrough tunnel fallback** | Kalau `mitmTLS` gagal handshake (client nolak cert), fallback ke `io.Copy` dua arah instead of langsung putus koneksi | Kecil-sedang — tambahan di `tls.go`, deteksi handshake error lalu re-dial raw |
+| # | Fitur | Effort | Status |
+|---|---|---|---|
+| 1 | **Scope / exclude-list** | ~1-2 hari | ⏳ Next |
+| 2 | **Export history** | ~1 hari | ⏳ |
+| 3 | **Inspector** (panel parsing request/response + decode/encode cepat: Base64, URL, hex, JWT) | ~2-3 hari | ⏳ |
+| 4 | **Match & Replace** | ~3-4 hari | ⏳ |
+| 5 | **Passthrough fallback** (otomatis, saat handshake MITM gagal) | ~2-3 hari | ⏳ |
+| 6 | **Intruder** (attack type Sniper dulu, single payload position) | ~1 minggu | ⏳ |
 
-Kalau mau lanjut salah satu, mulai dari **scope/exclude-list** atau
-**export history** — dua-duanya kecil dan langsung kepake buat workflow
-sehari-hari sebelum masuk yang lebih kompleks kayak Match & Replace atau
-scripting.
+### Kenapa urutan ini
+
+- **#1 duluan** — paling kecil, dan langsung kepake tiap hari (banyak app
+  modern certificate-pinning, tanpa exclude-list proxy "gagal" terus buat
+  domain itu).
+- **#2 setelah #1** — independen, quick win, gak ada dependency ke fitur
+  lain.
+- **#3 di tengah** — Inspector cuma baca data yang udah ada di
+  `store.Entry`/response Repeater dan nampilinnya lebih rapi. Gak
+  nyentuh `internal/proxy` sama sekali, jadi aman dikerjain kapan pun
+  tanpa risk break fitur lain — cocok buat "istirahat" sebelum masuk
+  fitur yang lebih kompleks lagi.
+- **#4 sebelum #5** — Match & Replace nyentuh `interceptAndApply`, jadi
+  dikerjain dulu sebelum Passthrough fallback (yang juga nyentuh alur
+  MITM) biar gak numpuk perubahan di area yang sama bersamaan.
+- **#5 setelah #1** — secara konsep ini penyempurna dari exclude-list:
+  #1 = passthrough manual (user yang nentuin domain mana), #5 =
+  passthrough otomatis (proxy yang detect sendiri pas handshake gagal).
+  Ngerjain #1 duluan bikin logic passthrough-nya udah dipahami sebelum
+  masuk versi otomatis.
+- **#6 terakhir** — paling kompleks: butuh placeholder parsing
+  (`§payload§`), payload list/wordlist, loop request dengan concurrency
+  + rate limiting (reuse pola worker pool dari `portscanner`).
+
+### Keputusan arsitektur: shared `reqedit` helper
+
+Match & Replace (#4) dan Intruder (#6) sama-sama butuh cara nge-parse
+dan edit raw request sebagai string/template (cari-ganti pattern buat
+M&R, cari-ganti placeholder `§...§` buat Intruder). Daripada duplikat
+logic ini di dua tempat, keduanya bakal pakai satu package baru
+`internal/reqedit` yang nyediain:
+- Parsing header/body request jadi bentuk yang bisa di-edit terprogram
+- Substitusi berbasis regex (dipakai M&R) atau berbasis penanda posisi
+  (dipakai Intruder)
+
+Ini diputuskan pas #4 mulai dikerjain, biar #6 tinggal reuse tanpa
+refactor ulang.
+
+### Fitur yang dipertimbangkan tapi belum masuk roadmap resmi
+
+| Fitur | Kenapa ditunda |
+|---|---|
+| **Auth buat UI** | Resiko rendah selama dipakai di localhost sendiri; masuk kalau proxy mulai dijalanin di jaringan bareng |
+| **Repeater history** | Nice-to-have, gak critical buat workflow inti |
+| **Burp Collaborator** | Beda kelas dari fitur lain — butuh infrastruktur eksternal (domain publik + DNS server + VPS terekspos internet), bukan sekadar nambah kode di proxy lokal. Effort ~2-4 minggu dan perlu keputusan infra dulu (domain apa, ada VPS gak) sebelum mulai. Dipertimbangkan setelah 6 fitur di atas selesai. |

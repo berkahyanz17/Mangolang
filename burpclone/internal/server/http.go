@@ -1,12 +1,15 @@
 package server
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"burpclone/internal/intercept"
 	"burpclone/internal/repeater"
+	"burpclone/internal/reqedit"
 	"burpclone/internal/store"
 )
 
@@ -14,6 +17,7 @@ type Options struct {
 	Store       *store.DB
 	Interceptor *intercept.Queue
 	Hub         *Hub
+	Rules       *reqedit.RuleStore
 }
 
 type Server struct {
@@ -31,11 +35,16 @@ func New(opts Options) *Server {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/history", s.handleHistory)
 	s.mux.HandleFunc("GET /api/history/{id}", s.handleHistoryDetail)
+	s.mux.HandleFunc("GET /api/history/export", s.handleHistoryExport)
 	s.mux.HandleFunc("GET /api/intercept", s.handleListIntercept)
 	s.mux.HandleFunc("POST /api/intercept/toggle", s.handleToggleIntercept)
 	s.mux.HandleFunc("POST /api/intercept/{id}/forward", s.handleForward)
 	s.mux.HandleFunc("POST /api/intercept/{id}/drop", s.handleDrop)
 	s.mux.HandleFunc("POST /api/repeater/send", s.handleRepeaterSend)
+	s.mux.HandleFunc("GET /api/rules", s.handleListRules)
+	s.mux.HandleFunc("POST /api/rules", s.handleAddRule)
+	s.mux.HandleFunc("PATCH /api/rules/{id}", s.handleUpdateRule)
+	s.mux.HandleFunc("DELETE /api/rules/{id}", s.handleDeleteRule)
 	s.mux.HandleFunc("GET /ws", s.registerWS)
 
 	s.mux.Handle("/", http.FileServer(http.Dir("./web")))
@@ -75,6 +84,51 @@ func (s *Server) handleHistoryDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(entry)
+}
+
+// handleHistoryExport dumps the full history as JSON (default) or CSV,
+// triggered as a file download from the UI's Export button.
+func (s *Server) handleHistoryExport(w http.ResponseWriter, r *http.Request) {
+	entries, err := s.opts.Store.All()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	format := r.URL.Query().Get("format")
+	if format == "csv" {
+		s.writeHistoryCSV(w, entries)
+		return
+	}
+	s.writeHistoryJSON(w, entries)
+}
+
+func (s *Server) writeHistoryJSON(w http.ResponseWriter, entries []*store.Entry) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="burpclone-history.json"`)
+	json.NewEncoder(w).Encode(entries)
+}
+
+func (s *Server) writeHistoryCSV(w http.ResponseWriter, entries []*store.Entry) {
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", `attachment; filename="burpclone-history.csv"`)
+
+	cw := csv.NewWriter(w)
+	defer cw.Flush()
+
+	cw.Write([]string{"id", "timestamp", "method", "url", "host", "status_code", "req_headers", "resp_headers"})
+	for _, e := range entries {
+		cw.Write([]string{
+			fmt.Sprintf("%d", e.ID),
+			e.Timestamp.Format("2006-01-02 15:04:05"),
+			e.Method,
+			e.URL,
+			e.Host,
+			fmt.Sprintf("%d", e.StatusCode),
+			e.ReqHeaders,
+			e.RespHeaders,
+		})
+	}
 }
 
 func (s *Server) handleListIntercept(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +227,69 @@ func (s *Server) handleRepeaterSend(w http.ResponseWriter, r *http.Request) {
 		"duration_ms": resp.Duration.Milliseconds(),
 		"error":       resp.Err,
 	})
+}
+
+func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.opts.Rules.List())
+}
+
+func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Target  string `json:"target"`
+		Match   string `json:"match"`
+		Replace string `json:"replace"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	target := reqedit.Target(in.Target)
+	if target != reqedit.TargetHeader && target != reqedit.TargetBody && target != reqedit.TargetURL {
+		http.Error(w, "target must be one of: header, body, url", http.StatusBadRequest)
+		return
+	}
+
+	rule, err := s.opts.Rules.Add(&reqedit.Rule{Enabled: true, Target: target, Match: in.Match, Replace: in.Replace})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rule)
+}
+
+func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var in struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.opts.Rules.SetEnabled(id, in.Enabled); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := s.opts.Rules.Delete(id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) ListenAndServe(addr string) error {

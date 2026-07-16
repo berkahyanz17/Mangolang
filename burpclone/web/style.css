@@ -88,3 +88,21 @@ button:hover { background: #3a5a7a; }
   border-radius: 4px;
 }
 .error { color: #f66; }
+.export-buttons { margin-bottom: 1rem; }
+.inspector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.inspector-col h3 { margin-top: 0; }
+.inspector-buttons { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.inspector-buttons button { margin-right: 0; margin-bottom: 0.3rem; }
+#insp-output.error { color: #f66; }
+.hint { color: #777; font-size: 0.85rem; }
+.mini-table { width: 100%; margin-bottom: 1rem; }
+.mini-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid #2a2a2a; word-break: break-all; }
+.mini-table td:first-child { color: #7ab; width: 30%; }
+.rule-form { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.rule-form select { background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 4px; }
+#rules-table code { font-size: 0.85rem; color: #7ab; }

@@ -18,9 +18,15 @@
     <button class="tab-btn active" data-tab="history">History</button>
     <button class="tab-btn" data-tab="intercept">Intercept</button>
     <button class="tab-btn" data-tab="repeater">Repeater</button>
+    <button class="tab-btn" data-tab="inspector">Inspector</button>
+    <button class="tab-btn" data-tab="rules">Match & Replace</button>
   </nav>
 
   <section id="tab-history" class="tab active">
+    <div class="export-buttons">
+      <button id="export-json">Export JSON</button>
+      <button id="export-csv">Export CSV</button>
+    </div>
     <table id="history-table">
       <thead><tr><th>ID</th><th>Method</th><th>URL</th><th>Status</th><th>Time</th></tr></thead>
       <tbody id="history-body"></tbody>
@@ -43,6 +49,51 @@
     <textarea id="rep-headers" placeholder="Headers, contoh:&#10;User-Agent: burpclone" rows="4"></textarea>
     <textarea id="rep-body" placeholder="Body" rows="6"></textarea>
     <div id="rep-response"></div>
+  </section>
+
+  <section id="tab-inspector" class="tab">
+    <div class="inspector-grid">
+      <div class="inspector-col">
+        <h3>Input</h3>
+        <textarea id="insp-input" rows="10" placeholder="Paste teks, header, atau token di sini..."></textarea>
+        <div class="inspector-buttons">
+          <button data-action="b64encode">Base64 Encode</button>
+          <button data-action="b64decode">Base64 Decode</button>
+          <button data-action="urlencode">URL Encode</button>
+          <button data-action="urldecode">URL Decode</button>
+          <button data-action="hexencode">Hex Encode</button>
+          <button data-action="hexdecode">Hex Decode</button>
+          <button data-action="jwtdecode">JWT Decode</button>
+        </div>
+      </div>
+      <div class="inspector-col">
+        <h3>Output</h3>
+        <pre id="insp-output"></pre>
+      </div>
+    </div>
+
+    <h3>Parsed request (dari History)</h3>
+    <div id="insp-parsed">
+      <p class="hint">Klik salah satu baris di History tab, hasil parse header/params/cookies-nya bakal muncul di sini.</p>
+    </div>
+  </section>
+
+  <section id="tab-rules" class="tab">
+    <h3>Tambah rule</h3>
+    <div class="rule-form">
+      <select id="rule-target">
+        <option value="header">Header</option>
+        <option value="body">Body</option>
+        <option value="url">URL</option>
+      </select>
+      <input id="rule-match" placeholder="Regex match, contoh: X-Tracking-ID: .*">
+      <input id="rule-replace" placeholder="Replace, contoh: (kosongin buat hapus baris)">
+      <button id="rule-add">Add Rule</button>
+    </div>
+    <table id="rules-table">
+      <thead><tr><th>On</th><th>Target</th><th>Match</th><th>Replace</th><th></th></tr></thead>
+      <tbody id="rules-body"></tbody>
+    </table>
   </section>
 
   <script src="app.js"></script>

@@ -21,6 +21,7 @@ $all('.tab-btn').forEach(btn => {
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
     state.activeTab = btn.dataset.tab;
     if (btn.dataset.tab === 'intercept') pollIntercept();
+    if (btn.dataset.tab === 'rules') loadRules();
   });
 });
 
@@ -32,6 +33,13 @@ function renderHistoryRow(e, prepend) {
   tr.addEventListener('click', () => showHistoryDetail(e.ID));
   if (prepend) tbody.prepend(tr); else tbody.appendChild(tr);
 }
+
+document.getElementById('export-json').addEventListener('click', () => {
+  window.location.href = '/api/history/export?format=json';
+});
+document.getElementById('export-csv').addEventListener('click', () => {
+  window.location.href = '/api/history/export?format=csv';
+});
 
 async function loadHistory() {
   const res = await fetch('/api/history?limit=50');
@@ -53,6 +61,7 @@ async function showHistoryDetail(id) {
     <h4>Response headers</h4><pre>${escapeHtml(e.RespHeaders)}</pre>
     <h4>Response body</h4><pre>${escapeHtml(atobSafe(e.RespBody))}</pre>
   `;
+  renderInspectorParsed(e.URL, e.ReqHeaders);
 }
 
 // --- WebSocket live feed ---
@@ -125,6 +134,145 @@ document.getElementById('rep-send').addEventListener('click', async () => {
     <h4>Headers</h4><pre>${escapeHtml(data.headers)}</pre>
     <h4>Body</h4><pre>${escapeHtml(data.body)}</pre>
   `;
+});
+
+// --- Inspector: encode/decode tools ---
+function b64encodeUtf8(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64decodeUtf8(str) {
+  return decodeURIComponent(escape(atob(str)));
+}
+function hexEncode(str) {
+  return Array.from(new TextEncoder().encode(str)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+}
+function hexDecode(str) {
+  const bytes = str.trim().split(/\s+/).map(h => parseInt(h, 16));
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+function jwtDecode(token) {
+  const parts = token.trim().split('.');
+  if (parts.length < 2) throw new Error('Bukan format JWT yang valid (butuh minimal 2 bagian dipisah titik)');
+  const header = JSON.parse(b64decodeUtf8(parts[0].replace(/-/g, '+').replace(/_/g, '/')));
+  const payload = JSON.parse(b64decodeUtf8(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+  return JSON.stringify({ header, payload }, null, 2) + '\n\n(signature tidak diverifikasi, cuma decode)';
+}
+
+const inspectorActions = {
+  b64encode: (s) => b64encodeUtf8(s),
+  b64decode: (s) => b64decodeUtf8(s),
+  urlencode: (s) => encodeURIComponent(s),
+  urldecode: (s) => decodeURIComponent(s),
+  hexencode: (s) => hexEncode(s),
+  hexdecode: (s) => hexDecode(s),
+  jwtdecode: (s) => jwtDecode(s),
+};
+
+$all('.inspector-buttons button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const input = document.getElementById('insp-input').value;
+    const output = document.getElementById('insp-output');
+    try {
+      output.textContent = inspectorActions[btn.dataset.action](input);
+      output.classList.remove('error');
+    } catch (e) {
+      output.textContent = 'Error: ' + e.message;
+      output.classList.add('error');
+    }
+  });
+});
+
+// --- Inspector: parsed request view (called from History detail) ---
+function parseHeaderText(raw) {
+  const lines = (raw || '').split('\r\n').filter(l => l.includes(':'));
+  return lines.map(l => {
+    const idx = l.indexOf(':');
+    return { key: l.slice(0, idx).trim(), value: l.slice(idx + 1).trim() };
+  });
+}
+
+function parseCookies(headers) {
+  const cookieHeader = headers.find(h => h.key.toLowerCase() === 'cookie' || h.key.toLowerCase() === 'set-cookie');
+  if (!cookieHeader) return [];
+  return cookieHeader.value.split(';').map(pair => {
+    const [k, ...rest] = pair.trim().split('=');
+    return { key: k, value: rest.join('=') };
+  }).filter(c => c.key);
+}
+
+function renderInspectorParsed(url, reqHeadersRaw) {
+  const headers = parseHeaderText(reqHeadersRaw);
+  const cookies = parseCookies(headers);
+  let params = [];
+  try {
+    const u = new URL(url);
+    params = Array.from(u.searchParams.entries()).map(([key, value]) => ({ key, value }));
+  } catch (e) { /* invalid URL, skip */ }
+
+  const table = (title, rows) => {
+    if (!rows.length) return `<h4>${title}</h4><p class="hint">(kosong)</p>`;
+    return `<h4>${title}</h4><table class="mini-table"><tbody>${rows.map(r => `<tr><td>${escapeHtml(r.key)}</td><td>${escapeHtml(r.value)}</td></tr>`).join('')}</tbody></table>`;
+  };
+
+  document.getElementById('insp-parsed').innerHTML =
+    table('Headers', headers) + table('Query params', params) + table('Cookies', cookies);
+}
+
+// --- Inspector: encode/decode tools ---
+
+// --- Match & Replace ---
+async function loadRules() {
+  const res = await fetch('/api/rules');
+  const rules = await res.json();
+  const tbody = document.getElementById('rules-body');
+  tbody.innerHTML = '';
+  (rules || []).forEach(rule => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="checkbox" ${rule.enabled ? 'checked' : ''} data-id="${rule.id}" class="rule-toggle"></td>
+      <td>${escapeHtml(rule.target)}</td>
+      <td><code>${escapeHtml(rule.match)}</code></td>
+      <td><code>${escapeHtml(rule.replace)}</code></td>
+      <td><button class="rule-delete" data-id="${rule.id}">Delete</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  $all('.rule-toggle').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      await fetch(`/api/rules/${cb.dataset.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: cb.checked }),
+      });
+    });
+  });
+  $all('.rule-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await fetch(`/api/rules/${btn.dataset.id}`, { method: 'DELETE' });
+      loadRules();
+    });
+  });
+}
+
+document.getElementById('rule-add').addEventListener('click', async () => {
+  const target = document.getElementById('rule-target').value;
+  const match = document.getElementById('rule-match').value;
+  const replace = document.getElementById('rule-replace').value;
+  if (!match) { alert('Match pattern wajib diisi'); return; }
+
+  const res = await fetch('/api/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target, match, replace }),
+  });
+  if (!res.ok) {
+    alert('Gagal nambah rule: ' + await res.text());
+    return;
+  }
+  document.getElementById('rule-match').value = '';
+  document.getElementById('rule-replace').value = '';
+  loadRules();
 });
 
 // --- Init ---

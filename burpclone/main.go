@@ -15,12 +15,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"burpclone/internal/ca"
 	"burpclone/internal/intercept"
 	"burpclone/internal/proxy"
 	"burpclone/internal/server"
 	"burpclone/internal/store"
+	"burpclone/internal/reqedit"
 )
 
 func main() {
@@ -30,6 +32,7 @@ func main() {
 	caDir := flag.String("ca-dir", "./ca-store", "directory to store/load the root CA cert+key")
 	dbPath := flag.String("db", "./burpclone.db", "path to the SQLite history database")
 	interceptOn := flag.Bool("intercept", false, "start with interception ON (hold requests for review)")
+	excludeHosts := flag.String("exclude", "", "comma-separated wildcard host patterns to skip MITM for, e.g. \"*.bank.co.id,*.some-pinned-app.com\"")
 	flag.Parse()
 
 	// --- Phase 2: CA setup ----------------------------------------------
@@ -59,11 +62,22 @@ func main() {
 
 	hub := server.NewHub()
 
+	var excludeList []string
+	for _, h := range strings.Split(*excludeHosts, ",") {
+		h = strings.TrimSpace(h)
+		if h != "" {
+			excludeList = append(excludeList, h)
+		}
+	}
+
+	ruleStore := reqedit.NewRuleStore()
 	p := proxy.New(proxy.Options{
-		RootCA:      rootCA,
-		Store:       db,
-		Interceptor: interceptor,
-		Broadcaster: hub,
+		RootCA:       rootCA,
+		Store:        db,
+		Interceptor:  interceptor,
+		Broadcaster:  hub,
+		ExcludeHosts: excludeList,
+		MatchReplace: ruleStore,
 	})
 
 	go func() {
@@ -77,6 +91,7 @@ func main() {
 		Store:       db,
 		Interceptor: interceptor,
 		Hub:         hub,
+		Rules:       ruleStore,
 	})
 
 	log.Printf("web UI listening on %s", *uiAddr)

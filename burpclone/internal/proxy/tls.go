@@ -59,7 +59,7 @@ func (p *Proxy) mitmTLS(conn net.Conn, host, hostPort string) {
 		var reqHeaderBuf bytes.Buffer
 		req.Header.Write(&reqHeaderBuf)
 
-		proceed, editedBody := interceptAndApply(p.opts.Interceptor, req, reqHeaderBuf.String(), reqBody)
+		proceed, editedBody := interceptAndApply(p.opts.Interceptor, p.opts.MatchReplace, req, reqHeaderBuf.String(), reqBody)
 		if !proceed {
 			log.Printf("DROPPED %s %s", req.Method, req.URL)
 			writeDropped(tlsConn)
