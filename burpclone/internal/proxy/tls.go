@@ -24,6 +24,7 @@ func (p *Proxy) mitmTLS(conn net.Conn, host, hostPort string) {
 
 	if err := tlsConn.Handshake(); err != nil {
 		log.Printf("mitm: handshake failed for %s: %v", host, err)
+		p.markHostFailed(host)
 		return
 	}
 

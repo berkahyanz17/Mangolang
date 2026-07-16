@@ -23,6 +23,7 @@ import (
 	"burpclone/internal/server"
 	"burpclone/internal/store"
 	"burpclone/internal/reqedit"
+	"burpclone/internal/intruder"
 )
 
 func main() {
@@ -87,11 +88,14 @@ func main() {
 		}
 	}()
 
+	intruderRegistry := intruder.NewRegistry()
+
 	ui := server.New(server.Options{
 		Store:       db,
 		Interceptor: interceptor,
 		Hub:         hub,
 		Rules:       ruleStore,
+		Intruder:    intruderRegistry,
 	})
 
 	log.Printf("web UI listening on %s", *uiAddr)

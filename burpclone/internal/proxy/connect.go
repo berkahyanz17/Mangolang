@@ -30,6 +30,12 @@ func (p *Proxy) handleConnect(conn net.Conn, targetHostPort string) {
 		return
 	}
 
+	if p.hasFailedBefore(host) {
+		log.Printf("CONNECT %s - host failed MITM handshake before, passing through", targetHostPort)
+		passthrough(conn, targetHostPort)
+		return
+	}
+
 	p.mitmTLS(conn, host, targetHostPort)
 }
 

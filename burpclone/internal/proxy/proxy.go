@@ -6,6 +6,7 @@ package proxy
 import (
 	"log"
 	"net"
+	"sync"
 
 	"burpclone/internal/ca"
 	"burpclone/internal/intercept"
@@ -32,10 +33,31 @@ type Options struct {
 // Proxy is the top-level proxy server.
 type Proxy struct {
 	opts Options
+
+	failedMu     sync.Mutex
+	failedHosts  map[string]bool // hosts where MITM handshake failed before - auto-passthrough from now on
 }
 
 func New(opts Options) *Proxy {
-	return &Proxy{opts: opts}
+	return &Proxy{opts: opts, failedHosts: make(map[string]bool)}
+}
+
+// markHostFailed records that MITM handshake failed for host, so future
+// CONNECT requests to it skip straight to passthrough instead of trying
+// (and failing) the handshake again every time.
+func (p *Proxy) markHostFailed(host string) {
+	p.failedMu.Lock()
+	defer p.failedMu.Unlock()
+	if !p.failedHosts[host] {
+		p.failedHosts[host] = true
+		log.Printf("proxy: %s failed MITM handshake once - auto-passthrough for future requests (or add it to -exclude to skip the first failed attempt too)", host)
+	}
+}
+
+func (p *Proxy) hasFailedBefore(host string) bool {
+	p.failedMu.Lock()
+	defer p.failedMu.Unlock()
+	return p.failedHosts[host]
 }
 
 // ListenAndServe starts the TCP listener and accept loop.

@@ -106,3 +106,6 @@ button:hover { background: #3a5a7a; }
 .rule-form { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
 .rule-form select { background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 4px; }
 #rules-table code { font-size: 0.85rem; color: #7ab; }
+.intruder-form { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+.intruder-controls { display: flex; align-items: center; gap: 1rem; margin: 0.5rem 0 1rem; }
+.intruder-controls label { font-size: 0.9rem; color: #ccc; }

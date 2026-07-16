@@ -20,6 +20,7 @@
     <button class="tab-btn" data-tab="repeater">Repeater</button>
     <button class="tab-btn" data-tab="inspector">Inspector</button>
     <button class="tab-btn" data-tab="rules">Match & Replace</button>
+    <button class="tab-btn" data-tab="intruder">Intruder</button>
   </nav>
 
   <section id="tab-history" class="tab active">
@@ -96,6 +97,28 @@
     </table>
   </section>
 
+  <section id="tab-intruder" class="tab">
+    <div class="intruder-form">
+      <select id="intr-method">
+        <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+      </select>
+      <input id="intr-url" placeholder="https://example.com/login?user=§payload§">
+    </div>
+    <textarea id="intr-headers" placeholder="Headers (opsional), boleh pakai §payload§" rows="3"></textarea>
+    <textarea id="intr-body" placeholder="Body (opsional), boleh pakai §payload§" rows="3"></textarea>
+    <textarea id="intr-payloads" placeholder="Satu payload per baris" rows="6"></textarea>
+    <div class="intruder-controls">
+      <label>Concurrency: <input id="intr-concurrency" type="number" value="5" style="width:60px"></label>
+      <label>Delay (ms): <input id="intr-delay" type="number" value="0" style="width:60px"></label>
+      <button id="intr-start">Start Attack</button>
+      <button id="intr-stop">Stop</button>
+    </div>
+    <table id="intruder-table">
+      <thead><tr><th>Payload</th><th>Status</th><th>Length</th><th>Time (ms)</th><th>Error</th></tr></thead>
+      <tbody id="intruder-body"></tbody>
+    </table>
+  </section>
+  
   <script src="app.js"></script>
 </body>
 </html>

@@ -11,6 +11,7 @@ import (
 	"burpclone/internal/repeater"
 	"burpclone/internal/reqedit"
 	"burpclone/internal/store"
+	"burpclone/internal/intruder"
 )
 
 type Options struct {
@@ -18,6 +19,7 @@ type Options struct {
 	Interceptor *intercept.Queue
 	Hub         *Hub
 	Rules       *reqedit.RuleStore
+	Intruder    *intruder.Registry
 }
 
 type Server struct {
@@ -45,6 +47,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/rules", s.handleAddRule)
 	s.mux.HandleFunc("PATCH /api/rules/{id}", s.handleUpdateRule)
 	s.mux.HandleFunc("DELETE /api/rules/{id}", s.handleDeleteRule)
+	s.mux.HandleFunc("POST /api/intruder/start", s.handleIntruderStart)
+	s.mux.HandleFunc("GET /api/intruder/{id}/results", s.handleIntruderResults)
+	s.mux.HandleFunc("POST /api/intruder/{id}/stop", s.handleIntruderStop)
 	s.mux.HandleFunc("GET /ws", s.registerWS)
 
 	s.mux.Handle("/", http.FileServer(http.Dir("./web")))
@@ -286,6 +291,68 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.opts.Rules.Delete(id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleIntruderStart(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Method      string   `json:"method"`
+		URL         string   `json:"url"`
+		Headers     string   `json:"headers"`
+		Body        string   `json:"body"`
+		Payloads    []string `json:"payloads"`
+		Concurrency int      `json:"concurrency"`
+		DelayMs     int      `json:"delay_ms"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if in.URL == "" || len(in.Payloads) == 0 {
+		http.Error(w, "url and payloads are required", http.StatusBadRequest)
+		return
+	}
+
+	run := s.opts.Intruder.Start(intruder.Attack{
+		Method:      in.Method,
+		URL:         in.URL,
+		Headers:     in.Headers,
+		Body:        in.Body,
+		Payloads:    in.Payloads,
+		Concurrency: in.Concurrency,
+		DelayMs:     in.DelayMs,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int64{"id": run.ID})
+}
+
+func (s *Server) handleIntruderResults(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	run, err := s.opts.Intruder.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	results, done := run.Results()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"results": results, "done": done})
+}
+
+func (s *Server) handleIntruderStop(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := s.opts.Intruder.Stop(id); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}

@@ -275,6 +275,71 @@ document.getElementById('rule-add').addEventListener('click', async () => {
   loadRules();
 });
 
+// --- Intruder ---
+let intruderRunId = null;
+let intruderPollTimer = null;
+
+document.getElementById('intr-start').addEventListener('click', async () => {
+  const method = document.getElementById('intr-method').value;
+  const url = document.getElementById('intr-url').value;
+  const headers = document.getElementById('intr-headers').value;
+  const body = document.getElementById('intr-body').value;
+  const payloads = document.getElementById('intr-payloads').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const concurrency = parseInt(document.getElementById('intr-concurrency').value, 10) || 5;
+  const delayMs = parseInt(document.getElementById('intr-delay').value, 10) || 0;
+
+  if (!url || payloads.length === 0) {
+    alert('URL dan minimal 1 payload wajib diisi');
+    return;
+  }
+
+  document.getElementById('intruder-body').innerHTML = '';
+
+  const res = await fetch('/api/intruder/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method, url, headers, body, payloads, concurrency, delay_ms: delayMs }),
+  });
+  if (!res.ok) {
+    alert('Gagal start attack: ' + await res.text());
+    return;
+  }
+  const data = await res.json();
+  intruderRunId = data.id;
+  pollIntruderResults();
+});
+
+document.getElementById('intr-stop').addEventListener('click', async () => {
+  if (!intruderRunId) return;
+  await fetch(`/api/intruder/${intruderRunId}/stop`, { method: 'POST' });
+});
+
+async function pollIntruderResults() {
+  if (!intruderRunId) return;
+  const res = await fetch(`/api/intruder/${intruderRunId}/results`);
+  if (!res.ok) return;
+  const data = await res.json();
+
+  const tbody = document.getElementById('intruder-body');
+  tbody.innerHTML = '';
+  (data.results || []).forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(r.payload)}</td>
+      <td>${r.status_code || '-'}</td>
+      <td>${r.body_length || '-'}</td>
+      <td>${Math.round((r.duration || 0) / 1e6)}</td>
+      <td class="error">${escapeHtml(r.error || '')}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  clearTimeout(intruderPollTimer);
+  if (!data.done) {
+    intruderPollTimer = setTimeout(pollIntruderResults, 1000);
+  }
+}
+
 // --- Init ---
 loadHistory();
 connectWS();
