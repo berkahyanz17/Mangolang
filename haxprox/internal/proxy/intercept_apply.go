@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"burpclone/internal/intercept"
-	"burpclone/internal/reqedit"
+	"haxprox/internal/intercept"
+	"haxprox/internal/reqedit"
 )
 
 // interceptAndApply applies Match & Replace rules first (these run

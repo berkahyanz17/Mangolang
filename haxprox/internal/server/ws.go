@@ -8,7 +8,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"burpclone/internal/store"
+	"haxprox/internal/store"
 )
 
 // Hub tracks connected WebSocket clients and broadcasts new entries to

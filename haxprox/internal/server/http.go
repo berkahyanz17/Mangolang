@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"time"
 
-	"burpclone/internal/proxy"
-	"burpclone/internal/intercept"
-	"burpclone/internal/repeater"
-	"burpclone/internal/reqedit"
-	"burpclone/internal/store"
-	"burpclone/internal/intruder"
+	"haxprox/internal/proxy"
+	"haxprox/internal/intercept"
+	"haxprox/internal/repeater"
+	"haxprox/internal/reqedit"
+	"haxprox/internal/store"
+	"haxprox/internal/intruder"
 )
 
 type Options struct {
@@ -152,13 +152,13 @@ func (s *Server) handleHistoryClear(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) writeHistoryJSON(w http.ResponseWriter, entries []*store.Entry) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", `attachment; filename="burpclone-history.json"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="haxprox-history.json"`)
 	json.NewEncoder(w).Encode(entries)
 }
 
 func (s *Server) writeHistoryCSV(w http.ResponseWriter, entries []*store.Entry) {
 	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", `attachment; filename="burpclone-history.csv"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="haxprox-history.csv"`)
 
 	cw := csv.NewWriter(w)
 	defer cw.Flush()

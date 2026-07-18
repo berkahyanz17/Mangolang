@@ -1,4 +1,4 @@
-// Command burpclone is a minimal MITM proxy / traffic inspector, loosely
+// Command haxprox is a minimal MITM proxy / traffic inspector, loosely
 // modeled after Burp Suite's Proxy + Repeater workflow.
 //
 // Build order (see ARCHITECTURE.md for full detail):
@@ -17,13 +17,13 @@ import (
 	"os"
 	"strings"
 
-	"burpclone/internal/ca"
-	"burpclone/internal/intercept"
-	"burpclone/internal/proxy"
-	"burpclone/internal/server"
-	"burpclone/internal/store"
-	"burpclone/internal/reqedit"
-	"burpclone/internal/intruder"
+	"haxprox/internal/ca"
+	"haxprox/internal/intercept"
+	"haxprox/internal/proxy"
+	"haxprox/internal/server"
+	"haxprox/internal/store"
+	"haxprox/internal/reqedit"
+	"haxprox/internal/intruder"
 )
 
 func main() {
@@ -31,7 +31,7 @@ func main() {
 	listenAddr := flag.String("listen", ":8080", "address for the proxy to listen on (browser points here)")
 	uiAddr := flag.String("ui", ":8000", "address for the web UI/API to listen on")
 	caDir := flag.String("ca-dir", "./ca-store", "directory to store/load the root CA cert+key")
-	dbPath := flag.String("db", "./burpclone.db", "path to the SQLite history database")
+	dbPath := flag.String("db", "./haxprox.db", "path to the SQLite history database")
 	interceptOn := flag.Bool("intercept", false, "start with interception ON (hold requests for review)")
 	excludeHosts := flag.String("exclude", "", "comma-separated wildcard host patterns to skip MITM for, e.g. \"*.bank.co.id,*.some-pinned-app.com\"")
 	flag.Parse()

@@ -1,4 +1,4 @@
-# burpclone
+# haxprox
 
 MITM proxy + traffic inspector, dibuat dari nol pakai Go — versi mini
 dari workflow Burp Suite (Proxy tab + Repeater), sebagai capstone project
@@ -12,7 +12,7 @@ intercept hold/forward/drop, Repeater, dan UI web dengan live feed).
 
 ## Arsitektur
 ```
-burpclone/
+haxprox/
 ├── main.go                  # entrypoint, flag parsing, wiring semua modul
 ├── internal/
 │   ├── ca/                  # root CA + leaf cert signing on-the-fly (per host)
@@ -62,7 +62,7 @@ go mod tidy
 ## Menjalankan
 
 ```bash
-go run . -listen :8080 -ui :8000 -ca-dir ./ca-store -db ./burpclone.db
+go run . -listen :8080 -ui :8000 -ca-dir ./ca-store -db ./haxprox.db
 ```
 
 Lalu:

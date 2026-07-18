@@ -1,4 +1,4 @@
-module burpclone
+module haxprox
 
 go 1.25.0
 

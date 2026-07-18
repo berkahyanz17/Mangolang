@@ -1,4 +1,4 @@
-# ARCHITECTURE.md — burpclone
+# ARCHITECTURE.md — haxprox
 
 Dokumen ini jelasin **kenapa** tiap modul dibikin dengan cara tertentu,
 bukan cuma **apa** isinya (itu udah ada di README + komentar kode). Kalau

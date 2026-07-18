@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"burpclone/internal/store"
+	"haxprox/internal/store"
 )
 
 // transport is reused across every forwarded request, same reasoning as

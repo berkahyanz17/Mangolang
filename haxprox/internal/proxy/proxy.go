@@ -8,10 +8,10 @@ import (
 	"net"
 	"sync"
 
-	"burpclone/internal/ca"
-	"burpclone/internal/intercept"
-	"burpclone/internal/reqedit"
-	"burpclone/internal/store"
+	"haxprox/internal/ca"
+	"haxprox/internal/intercept"
+	"haxprox/internal/reqedit"
+	"haxprox/internal/store"
 )
 
 // Broadcaster receives a copy of every logged entry, used to push live
